@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -35,6 +35,11 @@
 #include "mdss_debug.h"
 #include "mdss_dsi_phy.h"
 #include "mdss_dba_utils.h"
+
+//[Arima_8901][LCM][Jialongjhan] Add LCM_vendor file node for PCBA function test begin
+#include <linux/proc_fs.h>
+//[Arima_8901][LCM][Jialongjhan] Add LCM_vendor file node for PCBA function test end
+
 
 #define XO_CLK_RATE	19200000
 #define CMDLINE_DSI_CTL_NUM_STRING_LEN 2
@@ -400,6 +405,9 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	if (ret)
 		pr_err("%s: failed to disable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+    /*[Fairphone_8901][Jialong]To reduce power,pull down Touch reset pin when panel off start*/
+    gpio_direction_output(64, 0);
+    /*[Fairphone_8901][Jialong]To reduce power,pull down Touch reset pin when panel off end*/
 
 end:
 	return ret;
@@ -409,6 +417,11 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 {
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+    /*[Fairphone_8901][Jialong]To avoid fuzzy screen,pull high Touch reset pin when panel on start*/
+    gpio_direction_output(64, 1);
+    /*[Fairphone_8901][Jialong]To avoid fuzzy screen,pull high Touch reset pin when panel on end*/
+
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -1015,8 +1028,7 @@ static ssize_t mdss_dsi_cmd_write(struct file *file, const char __user *p,
 static int mdss_dsi_cmd_flush(struct file *file, fl_owner_t id)
 {
 	struct buf_data *pcmds = file->private_data;
-	unsigned int len;
-	int blen, i;
+	int blen, len, i;
 	char *buf, *bufp, *bp;
 	struct dsi_ctrl_hdr *dchdr;
 
@@ -1060,7 +1072,7 @@ static int mdss_dsi_cmd_flush(struct file *file, fl_owner_t id)
 	while (len >= sizeof(*dchdr)) {
 		dchdr = (struct dsi_ctrl_hdr *)bp;
 		dchdr->dlen = ntohs(dchdr->dlen);
-		if (dchdr->dlen > (len - sizeof(*dchdr)) || dchdr->dlen < 0) {
+		if (dchdr->dlen > len || dchdr->dlen < 0) {
 			pr_err("%s: dtsi cmd=%x error, len=%d\n",
 				__func__, dchdr->dtype, dchdr->dlen);
 			kfree(buf);
@@ -3270,6 +3282,80 @@ end:
 	return rc;
 }
 
+/*[Arima_8901][Jialongjhan] Add LCM_vendor file node for PCBA function test 20181114 begin*/
+extern void seq_printf(struct seq_file *m, const char *f, ...);
+extern int single_open(struct file *, int (*)(struct seq_file *, void *), void *);
+extern ssize_t seq_read(struct file *, char __user *, size_t, loff_t *);
+extern loff_t seq_lseek(struct file *, loff_t, int);
+extern int single_release(struct inode *, struct file *);
+
+static int proc_lcm_vendor_show(struct seq_file *m, void *v)
+{
+    int lcm_id;
+    lcm_id = gpio_request(59, "lcm_id");
+
+    if(lcm_id == 1)
+    {
+        //For another's LCM module
+        seq_printf(m, "2nd LCM\n");         
+    }
+    else
+    {   //DJN's LCM module id is 0.
+        seq_printf(m, "DJN , HX83112B\n");
+    }
+
+    return 0;
+}
+
+static int proc_lcm_vendor_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, proc_lcm_vendor_show, NULL);
+}
+
+static const struct file_operations proc_lcm_vendor_fops = { 
+    .open  = proc_lcm_vendor_open, 
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+/*[Arima_8901][Jialongjhan] Add LCM_vendor file node for PCBA function test 20181114 End*/
+
+/*[Arima_8901][Jialongjhan] Expose display revision 20190326 begin*/
+
+static int proc_lcm_revision_show(struct seq_file *m, void *v)
+{
+    int lcm_id;
+    extern int RDDID_HWINFO[3];
+
+    lcm_id = gpio_request(59, "lcm_id");
+
+    if(lcm_id == 1)
+    {
+        //For another's LCM module
+        seq_printf(m, "2nd Source not ready.\n");         
+    }
+    else
+    {   //DJN's LCM module id is 0.
+        seq_printf(m, "DJN , HX%x%x%x\n", RDDID_HWINFO[0],RDDID_HWINFO[1],RDDID_HWINFO[2]);
+    }
+
+    return 0;
+}
+
+static int proc_lcm_revision_fops_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, proc_lcm_revision_show, NULL);
+}
+
+static const struct file_operations proc_lcm_revision_fops = { 
+    .open  = proc_lcm_revision_fops_open, 
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+};
+
+/*[Arima_8901][Jialongjhan] Expose display revision 20190326 end*/
+
 static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -3461,6 +3547,14 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 
 	mdss_dsi_debug_bus_init(mdss_dsi_res);
 
+	//[Arima_8901][LCM][Jialongjhan] Add LCM_vendor file node for PCBA function test begin
+    proc_create("lcm_vendor", 0, NULL, &proc_lcm_vendor_fops);
+    //[Arima_8901][LCM][Jialongjhan] Add LCM_vendor file node for PCBA function test end	
+
+    //[Arima_8901][Jialongjhan] Expose display revision 20190326 begin
+    proc_create("lcm_revision", 0666, NULL, &proc_lcm_revision_fops);
+    //[Arima_8901][Jialongjhan] Expose display revision 20190326 end
+	
 	return 0;
 
 error_shadow_clk_deinit:
