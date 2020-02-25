@@ -324,7 +324,6 @@ int afe_rt_proxy_port_read(phys_addr_t buf_addr_p,
 void afe_set_cal_mode(u16 port_id, enum afe_cal_mode afe_cal_mode);
 int afe_port_start(u16 port_id, union afe_port_config *afe_config,
 	u32 rate);
-int afe_set_tws_channel_mode(u16 port_id, u32 channel_mode);
 int afe_port_start_v2(u16 port_id, union afe_port_config *afe_config,
 		      u32 rate, u16 afe_in_channels, u16 afe_in_bit_width,
 		      struct afe_enc_config *enc_config,
@@ -396,10 +395,4 @@ int afe_tdm_port_start(u16 port_id, struct afe_tdm_port_config *tdm_port,
 void afe_set_routing_callback(routing_cb cb);
 int afe_get_av_dev_drift(struct afe_param_id_dev_timing_stats *timing_stats,
 		u16 port);
-
-#ifdef CONFIG_SND_SOC_TAS2560
-int tas2560_algo_afe_set_callback(
-	int32_t (*tas2560_algo_callback_func)(struct apr_client_data *data));
-int tas2560_algo_afe_apr_send_pkt(void *data, int index);
-#endif
 #endif /* __Q6AFE_V2_H__ */
